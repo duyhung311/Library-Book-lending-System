@@ -21,9 +21,13 @@ public class BookServiceImpl implements BookService {
     private final BookRepository repository;
     private final FileUpload fileUpload;
 
+    //@Transaction(rollbackFor = IOException.class) // if business requirement requires adding book to be failed if the
+    // uploadFile fails, then we should add rollbackFor option
     @Transactional
     @Override
     public Book addBook(BookDto request) throws IOException {
+        // Assume that upload image failure does not affect add book flow
+        // It carries on and user can upload the image later
         String uri = fileUpload.uploadFile(request.imageUrl());
         Book savedBook = Book.builder()
                 .title(request.title())
