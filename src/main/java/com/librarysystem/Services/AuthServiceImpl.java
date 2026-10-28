@@ -50,22 +50,20 @@ public class AuthServiceImpl implements AuthService{
 
     @Override
     public LoginResponseDto login(LoginDto request) {
-        try {
-
-            var user = userRepository.findByEmail(request.email())
+        userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new ResourceNotFoundException("User not Found"));
 
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.email(), request.password())
-            );
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.email(), request.password())
+        );
 
+        try {
             // If authentication is successful, generate JWT
             User userDetails = (User) authentication.getPrincipal();
             String jwt = jwtService.generateToken(userDetails);
             long expiredIn = jwtService.getExpirationTime();
 
             return new LoginResponseDto(jwt,expiredIn , userDetails.getRole().name());
-
         } catch (Exception e) {
             throw new UnauthorizedException("Invalid username or password: " + e.getMessage());
         }
