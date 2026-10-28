@@ -5,7 +5,6 @@ import com.librarysystem.Dto.RegisterDto;
 import com.librarysystem.Entities.Role;
 import com.librarysystem.Entities.User;
 import com.librarysystem.Exception.AccountAlreadyExistsException;
-import com.librarysystem.Exception.ResourceNotFoundException;
 import com.librarysystem.Repositories.UserRepository;
 import com.librarysystem.ResponseDto.LoginResponseDto;
 import com.librarysystem.ResponseDto.RegisterResponseDto;
@@ -107,8 +106,6 @@ public class AuthServiceImplTest {
         User u = createNormalUser();
         LoginDto dto = new LoginDto("harryl423@gmail.com", "not.a.password");
         Authentication auth = new UsernamePasswordAuthenticationToken(u, null, u.getAuthorities());
-        when(userRepository.findByEmail(dto.email()))
-                .thenReturn(Optional.of(u));
         when(authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(dto.email(), dto.password())
         )).thenReturn(auth);
@@ -120,39 +117,55 @@ public class AuthServiceImplTest {
         assertEquals("jwt-goes-here", result.token());
         assertEquals(3600000L, result.expiredIn());
         assertEquals("MEMBER", result.role());
-
     }
 
     @Test
-    public void login_throwsErrorWrongPassword() {
-        User u = createNormalUser();
+    public void login_throwsWhenPasswordWrong() {
         LoginDto dto = new LoginDto("harryl423@gmail.com", "wrong.password");
-        when(userRepository.findByEmail(dto.email()))
-                .thenReturn(Optional.of(u));
-
         when(authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        dto.email(), dto.password())
-
+                new UsernamePasswordAuthenticationToken(dto.email(), dto.password())
         )).thenThrow(new BadCredentialsException("Bad credentials"));
 
-        assertThrows(BadCredentialsException.class, () -> {
-            authService.login(dto);
-        });
+        BadCredentialsException ex = assertThrows(BadCredentialsException.class,
+                () -> authService.login(dto));
+
+        assertEquals("Bad credentials", ex.getMessage());
+        verify(jwtService, never()).generateToken(any());
     }
 
     @Test
-    public void login_throwsErrorUserNotExist() {
-        LoginDto dto = new LoginDto("henryl423@gmail.com", "wrong.password");
-        when(userRepository.findByEmail(dto.email()))
-                .thenReturn(Optional.empty());
+    public void login_throwsSameErrorWhenUserNotFound() {
+        // Spring's AuthenticationManager reports an unknown email as BadCredentialsException,
+        // the same as a wrong password, so callers can't tell which emails are registered.
+        LoginDto dto = new LoginDto("henryl423@gmail.com", "any.password");
+        when(authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(dto.email(), dto.password())
+        )).thenThrow(new BadCredentialsException("Bad credentials"));
 
-        assertThrows(ResourceNotFoundException.class, () -> {
-            authService.login(dto);
-        });
+        BadCredentialsException ex = assertThrows(BadCredentialsException.class,
+                () -> authService.login(dto));
 
-        verify(authenticationManager, never()).authenticate(any());
+        assertEquals("Bad credentials", ex.getMessage());
+        // The service must not do its own lookup: that lookup is what leaked "User not Found".
+        verify(userRepository, never()).findByEmail(any());
+        verify(jwtService, never()).generateToken(any());
     }
 
+    @Test
+    public void login_letsTokenErrorsThroughInsteadOfReportingBadCredentials() {
+        // A broken JWT setup is a server problem, not a wrong password.
+        User u = createNormalUser();
+        LoginDto dto = new LoginDto("harryl423@gmail.com", "not.a.password");
+        Authentication auth = new UsernamePasswordAuthenticationToken(u, null, u.getAuthorities());
+        when(authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(dto.email(), dto.password())
+        )).thenReturn(auth);
+        when(jwtService.generateToken(u))
+                .thenThrow(new IllegalArgumentException("The secret key must be at least 256 bits"));
 
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> authService.login(dto));
+
+        assertEquals("The secret key must be at least 256 bits", ex.getMessage());
+    }
 }
