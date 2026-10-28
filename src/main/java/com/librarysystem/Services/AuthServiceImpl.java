@@ -31,14 +31,12 @@ public class AuthServiceImpl implements AuthService{
 
     @Override
     public RegisterResponseDto signup(RegisterDto request) {
+        boolean isEmailExist = userRepository.findByEmail(request.email()).isPresent();
+        if(isEmailExist){
+            throw new AccountAlreadyExistsException("Account already exists using this Email");
+        }
 
         try {
-
-            boolean isEmailExist = userRepository.findByEmail(request.email()).isPresent();
-            if(isEmailExist){
-                throw new AccountAlreadyExistsException("Account already exists using this Email");
-            }
-
             User user = mapper.maptoUser(request);
 
             User savedUser = userRepository.save(user);
